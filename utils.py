@@ -1,39 +1,16 @@
 import torch
 import numpy as np
-import pandas as pd
-from sklearn.metrics import confusion_matrix, f1_score, accuracy_score
-#from torch._C import float32
+from sklearn.metrics import f1_score, accuracy_score
 import torch.nn as nn
 
-def au_softmax_loss(input, target, weight=None, size_average=True, reduce=True):
 
-    classify_loss = nn.NLLLoss(size_average=size_average, reduce=reduce, ignore_index=9)
-
-    for i in range(input.shape[1]):
-        t_input = input[:, i]
-        t_target = target[:, i]
-        t_loss = classify_loss(t_input, t_target)
-        if weight is not None:
-            t_loss = t_loss * weight[i]
-        t_loss = torch.unsqueeze(t_loss, 0)
-        if i == 0:
-            loss = t_loss
-        else:
-            loss = torch.cat((loss, t_loss), 0)
-
-    if size_average:
-        return loss.mean()
-    else:
-        return loss.sum()
-
-
-def dice_loss(pred, target, smooth = 1):
+def dice_loss(pred, target, smooth=1):
     """This definition generalize to real valued pred and target vector.
     This should be differentiable.
     pred: tensor with first dimension as batch
     target: tensor with first dimension as batch
     """
-
+    # https://github.com/ZhiwenShao/PyTorch-JAANet
     # have to use contiguous since they may from a torch.view op
     iflat = pred.contiguous().view(-1)
     tflat = target.contiguous().view(-1)
@@ -46,11 +23,12 @@ def dice_loss(pred, target, smooth = 1):
 
 
 def au_softmax_loss(input, target, weight=None, size_average=True, reduce=True):
-
-    classify_loss = nn.NLLLoss(size_average=size_average, reduce=reduce, ignore_index = 9)
+    # https://github.com/ZhiwenShao/PyTorch-JAANet
+    classify_loss = nn.NLLLoss(
+        size_average=size_average, reduce=reduce, ignore_index=9)
 
     for i in range(input.size(2)):
-        
+
         t_input = input[:, :, i]
         t_target = target[:, i].long()
 
@@ -69,13 +47,12 @@ def au_softmax_loss(input, target, weight=None, size_average=True, reduce=True):
         return loss.sum()
 
 
-def au_dice_loss(input, target, weight=None, smooth = 1, size_average=True):
+def au_dice_loss(input, target, weight=None, smooth=1, size_average=True):
+    # https://github.com/ZhiwenShao/PyTorch-JAANet
     for i in range(input.size(2)):
         # input is log_softmax, t_input is probability
         t_input = (input[:, 1, i]).exp()
         t_target = (target[:, i]).float()
-        # t_loss = 1 - float(2*torch.dot(t_input, t_target) + smooth)/\
-        #          (torch.dot(t_input, t_input)+torch.dot(t_target, t_target)+smooth)/t_input.size(0)
         t_loss = dice_loss(t_input, t_target, smooth)
         if weight is not None:
             t_loss = t_loss * weight[i]
@@ -90,6 +67,7 @@ def au_dice_loss(input, target, weight=None, smooth = 1, size_average=True):
     else:
         return loss.sum()
 
+
 def calculate_AU_weight(master_dataframe):
     """
     Calculates the AU weight according to a occurence dataframe 
@@ -97,7 +75,8 @@ def calculate_AU_weight(master_dataframe):
         occurence_df: a pandas dataframe containing occurence of each AU. See BP4D+
     """
     #occurence_df = occurence_df.rename(columns = {'two':'new_name'})
-    occurence_df = master_dataframe[["1","2","4","6","7","10","12","14","15","17","23","24"]]
+    occurence_df = master_dataframe[[
+        "1", "2", "4", "6", "7", "10", "12", "14", "15", "17", "23", "24"]]
 
     weight_mtrx = np.zeros((occurence_df.shape[1], 1))
     for i in range(occurence_df.shape[1]):
@@ -112,7 +91,9 @@ def calculate_AU_weight(master_dataframe):
 
     return weight_mtrx
 
+
 def AU_detection_evalv2(loader, drml_net, use_gpu=True):
+    # https://github.com/ZhiwenShao/PyTorch-JAANet
     missing_label = 9
     for i, batch in enumerate(loader):
         img, label = batch
@@ -120,13 +101,14 @@ def AU_detection_evalv2(loader, drml_net, use_gpu=True):
             img, label = img.cuda(), label.cuda()
 
         pred_au = drml_net(img)
-        pred_au = (pred_au[:,1,:]).exp()
+        pred_au = (pred_au[:, 1, :]).exp()
         if i == 0:
             all_pred_au = pred_au.data.cpu().float()
             all_au = label.data.cpu().float()
         else:
-            all_pred_au = torch.cat((all_pred_au, pred_au.data.cpu().float()), 0)
-            all_au = torch.cat((all_au,label.data.cpu().float()))
+            all_pred_au = torch.cat(
+                (all_pred_au, pred_au.data.cpu().float()), 0)
+            all_au = torch.cat((all_au, label.data.cpu().float()))
     AUoccur_pred_prob = all_pred_au.data.numpy()
     AUoccur_actual = all_au.data.numpy()
 
@@ -148,8 +130,5 @@ def AU_detection_evalv2(loader, drml_net, use_gpu=True):
         new_curr_pred = curr_pred[curr_actual != missing_label]
         f1score_arr[i] = f1_score(new_curr_actual, new_curr_pred)
         acc_arr[i] = accuracy_score(new_curr_actual, new_curr_pred)
-  
-    
+
     return f1score_arr, acc_arr, AUoccur_actual, AUoccur_pred
-
-
