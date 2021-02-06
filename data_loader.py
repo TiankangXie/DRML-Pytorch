@@ -2,15 +2,14 @@ import os
 import pandas as pd
 import numpy as np
 from PIL import Image
-import torch
 from torch.utils.data import Dataset, DataLoader
 import os
 from torchvision import transforms
 # https://github.com/omarsayed7/Deep-Emotion/blob/master/data_loaders.py
-GEN_PATH = "F:\\FaceExprDecode\\aligned\\"
+#GEN_PATH = "F:\\FaceExprDecode\\aligned\\"
 class image_Loader(Dataset):
-    def __init__(self, csv_dir, img_dir, transform=None):
-        self.main_csv = pd.read_csv(csv_dir)
+    def __init__(self, csv_file, img_dir, transform=None):
+        self.main_csv = csv_file
         self.img_dir = img_dir
         if transform is None:
             self.transform = transforms.Compose([

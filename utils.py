@@ -108,7 +108,7 @@ def calculate_AU_weight(master_dataframe):
     print(weight_mtrx)
     weight_mtrx[weight_mtrx == np.inf] = 0
     print(np.sum(weight_mtrx)*len(weight_mtrx))
-    weight_mtrx = weight_mtrx / (np.sum(weight_mtrx)*len(weight_mtrx))
+    weight_mtrx = weight_mtrx / np.sum(weight_mtrx) * len(weight_mtrx)
 
     return weight_mtrx
 
@@ -130,8 +130,6 @@ def AU_detection_evalv2(loader, drml_net, use_gpu=True):
     AUoccur_pred_prob = all_pred_au.data.numpy()
     AUoccur_actual = all_au.data.numpy()
 
-    # np.savetxt('B3D_val_predAUprob-2_all_.txt', AUoccur_pred_prob, fmt='%f',
-    #            delimiter='\t')
     # AUs
     AUoccur_pred = np.zeros(AUoccur_pred_prob.shape)
     AUoccur_pred[AUoccur_pred_prob < 0.5] = 0
@@ -150,7 +148,8 @@ def AU_detection_evalv2(loader, drml_net, use_gpu=True):
         new_curr_pred = curr_pred[curr_actual != missing_label]
         f1score_arr[i] = f1_score(new_curr_actual, new_curr_pred)
         acc_arr[i] = accuracy_score(new_curr_actual, new_curr_pred)
-
-    return f1score_arr, acc_arr
+  
+    
+    return f1score_arr, acc_arr, AUoccur_actual, AUoccur_pred
 
 

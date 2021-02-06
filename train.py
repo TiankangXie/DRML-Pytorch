@@ -7,59 +7,64 @@ import torch
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from torch.utils.data import random_split
-import logging
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 from lr_scheduler import step_lr_scheduler
+import numpy as np
+import sys 
+import pickle
 
+##################PARAMETERS################################
 optim_dict = {'SGD':optim.SGD, 'Adam':optim.Adam}
-
-cfg_lr = 0.001
-master_file_path = "F:\\FaceExprDecode\\outs\\true_marked.csv"
-n_epochs = 800
+config_gen_path = "/home/tiankang/JAA_Net3/"
+config_imgdir = "/Storage/Data/BP4D+_v0.2/2D+3D/aligned/"
+config_csv_name = "true_marked_30subset.csv"
+n_epochs = 40
 config_lr_decay_rate = 0.9
 config_class_num = 12
 config_train_batch = 24
 config_test_batch = 12
-config_test_every_epoch = 100
-config_start_epoch = 80
+config_test_every_epoch = 5
+config_start_epoch = 2
 config_optimizer_type = "SGD"
-#config_lr_type = ""
 config_gamma = 0.3
-config_stepsize = 24
+config_stepsize = 12
 config_init_lr = 0.001
-
-def adjust_lr(optimizer, decay_rate = 0.9):
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = param_group['lr'] * 0.9
+############################################################
 
 use_gpu = torch.cuda.is_available()
 
-master_file = pd.read_csv(master_file_path)
-
-use_gpu = True
+master_file = pd.read_csv(config_gen_path+"outs/"+config_csv_name)
+unique_names = master_file['Subject'].unique()
+unique_idxx = np.arange(len(unique_names))
+np.random.seed(0)
+train_idx = np.random.choice(unique_idxx, int((2/3)*len(unique_names))) # 3 fold CV
+#print(train_idx)
+train_master_file = master_file[master_file['Subject'].isin(unique_names[train_idx])]
+train_master_file.reset_index(drop=True,inplace=True)
+test_master_file = master_file[master_file['Subject'].isin(unique_names[-train_idx])]
+test_master_file.reset_index(drop=True,inplace=True)
+#print('task B')
 
 au_weight = calculate_AU_weight(master_file)
 au_weight = torch.from_numpy(au_weight.astype('float'))
+
 if use_gpu:
     au_weight = au_weight.cuda()
 
-dsets = image_Loader(csv_dir=master_file_path, img_dir="F:\\FaceExprDecode\\aligned\\")
-
-
-lengths = master_file.shape[0]
-len_train = int(lengths*0.67)
-len_test = lengths-len_train
-
-train_set, test_set = random_split(dsets, [len_train,len_test])
-train_set = DataLoader(train_set,batch_size=config_train_batch,shuffle=False)
-test_set = DataLoader(test_set,batch_size=config_test_batch,shuffle=False)
+print("AU Weight:",au_weight)
+dsets_train = image_Loader(csv_file=train_master_file, img_dir=config_imgdir)
+dsets_test = image_Loader(csv_file=test_master_file, img_dir=config_imgdir)
+#print("task A")
+train_set = DataLoader(dsets_train,batch_size=config_train_batch,shuffle=False)
+test_set = DataLoader(dsets_test,batch_size=config_test_batch,shuffle=False)
+#print("Task B")
 
 net = DRML_net(config_class_num)
 counter = 0
 
-opt = optim_dict[config_optimizer_type](net.parameters(), lr = cfg_lr, momentum = 0.9, weight_decay = 0.9, nesterov = True)
+opt = optim_dict[config_optimizer_type](net.parameters(), lr = config_init_lr, momentum = 0.9, weight_decay = 0.9, nesterov = True)
 param_lr = []
 for param_group in opt.param_groups:
     param_lr.append(param_group['lr'])
@@ -67,16 +72,33 @@ for param_group in opt.param_groups:
 if use_gpu:
     net = net.cuda()
 
+old_stdout = sys.stdout
+log_file = open("/home/tiankang/AU_Detections/DRML/message.log","w")
+sys.stdout = log_file
+
+AU_pred = None
+AU_actual = None
+
 for epoch_idx in range(n_epochs):
     
     if epoch_idx > config_start_epoch and epoch_idx % config_test_every_epoch == 0:
         print("testing:")
         net.train(False)
-        f1score, accuracies = AU_detection_evalv2(test_set,net,use_gpu=use_gpu)
+        f1score, accuracies, matrixA, matrixB = AU_detection_evalv2(test_set,net,use_gpu=use_gpu)
         print("F1 Score:",f1score, "accuracies: ", accuracies)
+        
+        if AU_actual is None:
+            AU_actual = np.expand_dims(matrixA,0)
+        else:
+            AU_actual = np.concatenate([AU_actual,np.expand_dims(matrixA,0)],0)
 
+        if AU_pred is None:
+            AU_pred = np.expand_dims(matrixB,0)
+        else:
+            AU_pred = np.concatenate([AU_pred,np.expand_dims(matrixB,0)],0)        
+        
     for batch_index, (img,label) in enumerate(train_set):
-        if counter > 0 and batch_index % 50 == 0:
+        if counter > 0 and batch_index % 2 == 0:
             print('the number of training iterations is %d' % (counter))
             print('[epoch = %d][iter = %d][loss = %f][loss_au_dice = %f][loss_au_softmax = %f]' % (epoch_idx, batch_index,
                         loss.data.cpu().numpy(), loss_au_dice.data.cpu().numpy(), loss_au_softmax.data.cpu().numpy()))
@@ -97,6 +119,11 @@ for epoch_idx in range(n_epochs):
         opt.step()
         counter += 1
 
+with open('/home/tiankang/AU_Detections/DRML/AU_pred.pickle', 'wb') as handle:
+    pickle.dump(AU_pred, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-# %%
-# %%
+with open('/home/tiankang/AU_Detections/DRML/AU_actual.pickle', 'wb') as handle:
+    pickle.dump(AU_actual, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+sys.stdout = old_stdout
+log_file.close()
