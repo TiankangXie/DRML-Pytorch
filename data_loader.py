@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from PIL import Image
+import torch
 from torch.utils.data import Dataset, DataLoader
 import os
 from torchvision import transforms
